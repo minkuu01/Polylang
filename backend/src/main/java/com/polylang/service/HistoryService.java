@@ -23,10 +23,10 @@ public class HistoryService {
     }
 
     /**
-     * Retrieve the most recent 20 execution history records.
+     * Retrieve the most recent 20 execution history records for a user.
      */
-    public List<ExecutionHistory> getRecentHistory() {
-        return historyRepository.findTop20ByOrderByCreatedAtDesc();
+    public List<ExecutionHistory> getRecentHistory(String userId) {
+        return historyRepository.findTop20ByUserIdOrderByCreatedAtDesc(userId);
     }
 
     /**
@@ -37,9 +37,19 @@ public class HistoryService {
     }
 
     /**
-     * Delete all history records.
+     * Delete all history records for a specific user.
      */
-    public void clearHistory() {
-        historyRepository.deleteAll();
+    public void clearHistory(String userId) {
+        historyRepository.deleteByUserId(userId);
+    }
+
+    /**
+     * Delete a specific history record.
+     */
+    public void deleteById(Long id, String userId) {
+        ExecutionHistory history = getById(id);
+        if (history != null && history.getUserId().equals(userId)) {
+            historyRepository.deleteById(id);
+        }
     }
 }

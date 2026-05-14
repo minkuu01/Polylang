@@ -1,3 +1,5 @@
+import { supabase } from "./supabase";
+
 export interface CodeRequest {
   instruction: string;
   targetLanguage: string;
@@ -23,6 +25,7 @@ export interface ExecutionResponse {
 
 export interface ExecutionHistory {
   id: number;
+  userId: string;
   inputText: string;
   detectedLanguage: string;
   translatedText: string;
@@ -43,6 +46,17 @@ export class ApiError extends Error {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
+/**
+ * Helper to get authentication headers
+ */
+async function getAuthHeaders() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': session ? `Bearer ${session.access_token}` : '',
+  };
+}
+
 async function fetchWithTimeout(url: string, options: RequestInit = {}) {
   const { timeout = 70000 } = options as any;
   const controller = new AbortController();
@@ -59,6 +73,9 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}) {
       if (response.status === 429) {
         throw new ApiError('Rate limit reached. Please wait a moment.', 429);
       }
+      if (response.status === 401 || response.status === 403) {
+        throw new ApiError('Authentication required. Please sign in.', response.status);
+      }
       if (response.status >= 500) {
         throw new ApiError('Server error. Check backend logs.', response.status);
       }
@@ -70,39 +87,69 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}) {
   } catch (error: any) {
     clearTimeout(id);
     if (error.name === 'AbortError') {
-      throw new ApiError('Backend is offline. Make sure Spring Boot is running on port 8080.', 503);
+      throw new ApiError('Backend is offline. Make sure Spring Boot is running.', 503);
     }
     throw error;
   }
 }
 
 export async function generateCode(instruction: string, targetLanguage: string): Promise<CodeResponse> {
+  const headers = await getAuthHeaders();
   const response = await fetchWithTimeout(`${API_URL}/api/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ instruction, targetLanguage }),
   });
   return response.json();
 }
 
 export async function executeCode(code: string, language: string): Promise<ExecutionResponse> {
+  const headers = await getAuthHeaders();
   const response = await fetchWithTimeout(`${API_URL}/api/execute`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ code, language }),
   });
   return response.json();
 }
 
 export async function getHistory(): Promise<ExecutionHistory[]> {
-  const response = await fetchWithTimeout(`${API_URL}/api/history`);
+  const headers = await getAuthHeaders();
+  const response = await fetchWithTimeout(`${API_URL}/api/history`, {
+    headers
+  });
   return response.json();
 }
 
 export async function clearHistory(): Promise<void> {
+  const headers = await getAuthHeaders();
   await fetchWithTimeout(`${API_URL}/api/history`, {
     method: 'DELETE',
+    headers
   });
+}
+
+export async function deleteHistoryItem(id: number): Promise<void> {
+  const headers = await getAuthHeaders();
+  await fetchWithTimeout(`${API_URL}/api/history/${id}`, {
+    method: 'DELETE',
+    headers
+  });
+}
+
+export async function updateHistoryItem(id: number, data: { code?: string; status?: string }): Promise<ExecutionHistory> {
+  const headers = await getAuthHeaders();
+  const response = await fetchWithTimeout(`${API_URL}/api/history/${id}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+export async function getSharedItem(id: number): Promise<ExecutionHistory> {
+  const response = await fetchWithTimeout(`${API_URL}/api/share/${id}`);
+  return response.json();
 }
 
 export async function checkHealth(): Promise<boolean> {

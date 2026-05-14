@@ -8,6 +8,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 import java.util.Map;
 
@@ -32,29 +35,22 @@ public class CodeController {
         this.historyService = historyService;
     }
 
-    /**
-     * POST /api/generate
-     * Accepts a natural language instruction and target programming language.
-     * Detects language, translates to English, generates code using AI.
-     */
     @PostMapping("/generate")
-    public ResponseEntity<?> generateCode(@RequestBody CodeRequest request) {
-        log.info("Generate request: lang={}, instruction={}", request.getTargetLanguage(),
-                request.getInstruction().substring(0, Math.min(50, request.getInstruction().length())));
+    public ResponseEntity<?> generateCode(@RequestBody CodeRequest request, JwtAuthenticationToken token) {
+        String userId = token.getName(); // Extract userId from JWT 'sub'
+        log.info("Generate request from user {}: lang={}", userId, request.getTargetLanguage());
 
         try {
-            // Step 1: Detect language and translate to English
             TranslationService.TranslationResult translation =
                     translationService.detectAndTranslate(request.getInstruction());
 
-            // Step 2: Generate code using AI
             String generatedCode = codeGenerationService.generateCode(
                     translation.getTranslatedText(),
                     request.getTargetLanguage()
             );
 
-            // Step 3: Save to history
             ExecutionHistory history = new ExecutionHistory();
+            history.setUserId(userId);
             history.setInputText(request.getInstruction());
             history.setDetectedLanguage(translation.getDetectedLanguage());
             history.setTranslatedText(translation.getTranslatedText());
@@ -63,7 +59,6 @@ public class CodeController {
             history.setStatus("GENERATED");
             historyService.save(history);
 
-            // Step 4: Build response
             CodeResponse response = new CodeResponse(
                     generatedCode,
                     translation.getDetectedLanguage(),
@@ -72,73 +67,87 @@ public class CodeController {
             );
 
             return ResponseEntity.ok(response);
-
         } catch (Exception e) {
-            log.error("Code generation failed: {}", e.getMessage(), e);
-            String userMessage = e.getMessage() != null ? e.getMessage() : "Unknown error during code generation";
-            return ResponseEntity.status(500).body(Map.of("message", userMessage));
+            log.error("Code generation failed: {}", e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("message", e.getMessage()));
         }
     }
 
-    /**
-     * POST /api/execute
-     * Accepts code and language, executes via Piston API.
-     */
     @PostMapping("/execute")
-    public ResponseEntity<ExecutionResponse> executeCode(@RequestBody ExecutionRequest request) {
-        log.info("Execute request: lang={}", request.getLanguage());
+    public ResponseEntity<ExecutionResponse> executeCode(@RequestBody ExecutionRequest request, JwtAuthenticationToken token) {
+        String userId = token.getName();
+        log.info("Execute request from user {}: lang={}", userId, request.getLanguage());
 
         long startTime = System.currentTimeMillis();
-        
-        // Execute the code
         CodeExecutionService.ExecutionResult result =
                 codeExecutionService.execute(request.getCode(), request.getLanguage());
-
         long duration = System.currentTimeMillis() - startTime;
 
-        // Save execution to history
+        // Save execution log
         ExecutionHistory history = new ExecutionHistory();
+        history.setUserId(userId);
         history.setInputText("Manual Execution");
         history.setTargetLanguage(request.getLanguage());
-        history.setGeneratedCode(request.getCode()); // Save the actual code run
+        history.setGeneratedCode(request.getCode());
         history.setOutput(result.getOutput());
         history.setError(result.getError());
         history.setExecutionTime(duration);
         history.setStatus(result.getExitCode() == 0 ? "SUCCESS" : "ERROR");
         historyService.save(history);
 
-        ExecutionResponse response = new ExecutionResponse(
-                result.getOutput(),
-                result.getError(),
-                result.getExitCode()
-        );
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(new ExecutionResponse(result.getOutput(), result.getError(), result.getExitCode()));
     }
 
-    /**
-     * GET /api/history
-     * Returns the most recent 20 execution records.
-     */
     @GetMapping("/history")
-    public ResponseEntity<List<ExecutionHistory>> getHistory() {
-        return ResponseEntity.ok(historyService.getRecentHistory());
+    public ResponseEntity<List<ExecutionHistory>> getHistory(JwtAuthenticationToken token) {
+        return ResponseEntity.ok(historyService.getRecentHistory(token.getName()));
     }
 
-    /**
-     * DELETE /api/history
-     * Clears all history records.
-     */
     @DeleteMapping("/history")
-    public ResponseEntity<Map<String, String>> clearHistory() {
-        historyService.clearHistory();
+    public ResponseEntity<Map<String, String>> clearHistory(JwtAuthenticationToken token) {
+        historyService.clearHistory(token.getName());
         return ResponseEntity.ok(Map.of("message", "History cleared successfully"));
     }
 
     /**
-     * GET /api/health
-     * Health check endpoint.
+     * DELETE /api/history/{id}
+     * Delete a single history record.
      */
+    @DeleteMapping("/history/{id}")
+    public ResponseEntity<Map<String, String>> deleteHistoryItem(@PathVariable Long id, JwtAuthenticationToken token) {
+        historyService.deleteById(id, token.getName());
+        return ResponseEntity.ok(Map.of("message", "Item deleted"));
+    }
+
+    /**
+     * PUT /api/history/{id}
+     * Update an existing code snippet (Save Project).
+     */
+    @PutMapping("/history/{id}")
+    public ResponseEntity<?> updateHistoryItem(@PathVariable Long id, @RequestBody Map<String, String> body, JwtAuthenticationToken token) {
+        ExecutionHistory history = historyService.getById(id);
+        if (history == null || !history.getUserId().equals(token.getName())) {
+            return ResponseEntity.status(403).body(Map.of("message", "Access denied"));
+        }
+        
+        if (body.containsKey("code")) history.setGeneratedCode(body.get("code"));
+        if (body.containsKey("status")) history.setStatus(body.get("status"));
+        
+        historyService.save(history);
+        return ResponseEntity.ok(history);
+    }
+
+    /**
+     * GET /api/share/{id}
+     * Publicly view a shared code snippet (No Auth Required - see SecurityConfig).
+     */
+    @GetMapping("/share/{id}")
+    public ResponseEntity<?> getSharedItem(@PathVariable Long id) {
+        ExecutionHistory history = historyService.getById(id);
+        if (history == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(history);
+    }
+
     @GetMapping("/health")
     public ResponseEntity<Map<String, String>> health() {
         return ResponseEntity.ok(Map.of("status", "UP", "service", "PolyLang"));

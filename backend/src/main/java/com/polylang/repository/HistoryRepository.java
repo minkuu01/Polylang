@@ -8,5 +8,6 @@ import java.util.List;
 
 @Repository
 public interface HistoryRepository extends JpaRepository<ExecutionHistory, Long> {
-    List<ExecutionHistory> findTop20ByOrderByCreatedAtDesc();
+    List<ExecutionHistory> findTop20ByUserIdOrderByCreatedAtDesc(String userId);
+    void deleteByUserId(String userId);
 }

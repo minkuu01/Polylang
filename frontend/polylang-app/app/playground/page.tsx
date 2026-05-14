@@ -6,7 +6,7 @@ import {
   ArrowLeft, Play, TerminalSquare, MessageSquare, Code2, Loader2,
   Save, Files, Search, Settings, FileCode2, User, X,
   PanelRightClose, PanelLeftClose, FolderOpen, Download, CheckCircle2,
-  Clock, ChevronRight, Timer, AlertCircle
+  Clock, ChevronRight, Timer, AlertCircle, Trash2, Share2
 } from "lucide-react";
 import Editor, { loader } from "@monaco-editor/react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,8 @@ import {
   executeCode,
   getHistory,
   clearHistory,
+  deleteHistoryItem,
+  updateHistoryItem,
   checkHealth,
   ApiError,
   CodeResponse,
@@ -83,6 +85,7 @@ export default function Playground() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [currentHistoryId, setCurrentHistoryId] = useState<number | null>(null);
   const [showExplorer, setShowExplorer] = useState(true);
   const [showChat, setShowChat] = useState(true);
   const [user, setUser] = useState<any>(null);
@@ -118,7 +121,7 @@ export default function Playground() {
         const data: CodeResponse = JSON.parse(saved);
         sessionStorage.removeItem("polylang_init");
         setSelectedLanguage(data.targetLanguage || "python");
-        loadCode(data.generatedCode, () => {
+        loadCode(data.generatedCode, undefined, () => {
           addMessage("ai", "Generated from your homepage prompt.", data.detectedLanguage);
         });
       } catch {}
@@ -144,10 +147,11 @@ export default function Playground() {
     }]);
   }
 
-  function loadCode(code: string, onDone?: () => void) {
+  function loadCode(code: string, id?: number, onDone?: () => void) {
     setIsLoadingCode(true);
     setHasCode(false);
     setEditorValue(code);
+    if (id) setCurrentHistoryId(id);
     setTimeout(() => {
       setIsLoadingCode(false);
       setHasCode(true);
@@ -197,7 +201,7 @@ export default function Playground() {
         detectedLabel
       );
 
-      loadCode(response.generatedCode, () => {
+      loadCode(response.generatedCode, undefined, () => {
         setIsGenerating(false);
         addMessage("ai", "Done. You can edit the code and click Run Code.");
         getHistory().then(setHistory).catch(() => {});
@@ -239,6 +243,37 @@ export default function Playground() {
     } finally {
       setIsRunning(false);
     }
+  };
+
+  // ── History Actions ───────────────────────────────────────────────────────
+  const handleDeleteItem = async (id: number) => {
+    try {
+      await deleteHistoryItem(id);
+      setHistory(prev => prev.filter(h => h.id !== id));
+      if (currentHistoryId === id) setCurrentHistoryId(null);
+    } catch (e) {
+      console.error("Delete failed", e);
+    }
+  };
+
+  const handleUpdateItem = async () => {
+    if (!currentHistoryId) return;
+    setSaveStatus("saving");
+    try {
+      await updateHistoryItem(currentHistoryId, { code: editorValue });
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2000);
+    } catch (e) {
+      console.error("Update failed", e);
+      setSaveStatus("idle");
+    }
+  };
+
+  const handleShare = () => {
+    if (!currentHistoryId) return;
+    const url = `${window.location.origin}/share/${currentHistoryId}`;
+    navigator.clipboard.writeText(url);
+    addMessage("ai", "Shareable link copied to clipboard! Anyone with this link can view your code.");
   };
 
   // ── Search in editor ──────────────────────────────────────────────────────
@@ -294,16 +329,30 @@ export default function Playground() {
             <option value="cpp">C++</option>
           </select>
 
-          {/* Save */}
+          {/* Share */}
+          <Button
+            variant="ghost" size="sm"
+            onClick={handleShare}
+            disabled={!currentHistoryId}
+            className="h-8 px-2 text-xs hidden sm:flex gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+          </Button>
+
+          {/* Save/Update Project */}
           <Button
             variant="outline" size="sm"
-            onClick={handleSave}
+            onClick={currentHistoryId ? handleUpdateItem : handleSave}
             disabled={!hasCode || saveStatus === "saving"}
-            className="h-8 px-3 text-xs hidden sm:flex gap-1.5"
+            className={`h-8 px-3 text-xs hidden sm:flex gap-1.5 transition-all ${
+              currentHistoryId ? "border-primary/30 bg-primary/5 hover:bg-primary/10" : ""
+            }`}
           >
             {saveStatus === "saved"
               ? <><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> Saved</>
-              : <><Download className="w-3.5 h-3.5" /> Save</>
+              : saveStatus === "saving"
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {currentHistoryId ? "Updating…" : "Saving…"}</>
+              : <><Save className={`w-3.5 h-3.5 ${currentHistoryId ? "text-primary" : ""}`} /> {currentHistoryId ? "Update" : "Save"}</>
             }
           </Button>
 
@@ -419,54 +468,74 @@ export default function Playground() {
                 <>
                   {(searchQuery ? filteredHistory : history).length > 0
                     ? (searchQuery ? filteredHistory : history).map(item => (
-                      <button
-                        key={item.id}
-                        onClick={() => {
-                          setEditorValue(item.generatedCode);
-                          setSelectedLanguage(item.targetLanguage);
-                          setHasCode(true);
-                          // Restore terminal output if it exists
-                          if (item.output || item.error) {
-                            const footer = item.status === "SUCCESS"
-                              ? `\n\n[Restored from history]  —  ${item.executionTime}ms`
-                              : `\n\n[Restored (Failed run)]  —  ${item.executionTime}ms`;
-                            setTerminalOutput((item.output || item.error || "(no output)") + footer);
-                          } else {
-                            setTerminalOutput("$ Restored from history");
-                          }
-                          addMessage("ai", `Restored: "${item.inputText.slice(0, 40)}${item.inputText.length > 40 ? "…" : ""}"`);
-                        }}
-                        className="flex flex-col gap-1 px-2 py-2 text-left text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground rounded transition-colors w-full group border border-transparent hover:border-border"
-                      >
-                        <div className="flex items-start gap-2">
-                          <Clock className="w-3 h-3 shrink-0 mt-0.5 text-muted-foreground/50 group-hover:text-primary transition-colors" />
-                          <span className="truncate leading-relaxed font-medium">{item.inputText}</span>
+                      <div key={item.id} className="relative group">
+                        <button
+                          onClick={() => {
+                            loadCode(item.generatedCode, item.id);
+                            setSelectedLanguage(item.targetLanguage);
+                            // Restore terminal output if it exists
+                            if (item.output || item.error) {
+                              const footer = item.status === "SUCCESS"
+                                ? `\n\n[Restored from history]  —  ${item.executionTime}ms`
+                                : `\n\n[Restored (Failed run)]  —  ${item.executionTime}ms`;
+                              setTerminalOutput((item.output || item.error || "(no output)") + footer);
+                            } else {
+                              setTerminalOutput("$ Restored from history");
+                            }
+                            addMessage("ai", `Restored session from: "${item.inputText.slice(0, 30)}..."`);
+                          }}
+                          className={`flex flex-col gap-1 px-2 py-2 text-left text-[12px] rounded transition-colors w-full border border-transparent hover:border-border ${
+                            currentHistoryId === item.id ? "bg-primary/5 border-primary/20 text-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          }`}
+                        >
+                          <div className="flex items-start gap-2 pr-12">
+                            <Clock className="w-3 h-3 shrink-0 mt-0.5 text-muted-foreground/50" />
+                            <span className="truncate leading-relaxed font-medium">{item.inputText}</span>
+                          </div>
+                          <div className="flex items-center gap-2 pl-5 text-[10px] opacity-70">
+                            <span className="uppercase">{item.targetLanguage}</span>
+                            {item.status && (
+                              <div className={`flex items-center gap-1 ${
+                                item.status === "SUCCESS" ? "text-emerald-500" : 
+                                item.status === "ERROR" ? "text-red-500" : "text-primary"
+                              }`}>
+                                {item.status === "SUCCESS" ? (
+                                  <CheckCircle2 className="w-2.5 h-2.5" />
+                                ) : item.status === "ERROR" ? (
+                                  <AlertCircle className="w-2.5 h-2.5" />
+                                ) : (
+                                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                )}
+                                <span>{item.status}</span>
+                              </div>
+                            )}
+                            {item.executionTime > 0 && (
+                              <div className="flex items-center gap-1">
+                                <Timer className="w-2.5 h-2.5" />
+                                <span>{item.executionTime}ms</span>
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                        
+                        {/* Hover Actions */}
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 bg-card/80 backdrop-blur-sm p-1 rounded-md border border-border shadow-sm">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleShare(); }}
+                            className="p-1 hover:text-primary transition-colors"
+                            title="Copy share link"
+                          >
+                            <Share2 className="w-3 h-3" />
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteItem(item.id); }}
+                            className="p-1 hover:text-destructive transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
                         </div>
-                        <div className="flex items-center gap-2 pl-5 text-[10px] opacity-70">
-                          <span className="uppercase">{item.targetLanguage}</span>
-                          {item.status && (
-                            <div className={`flex items-center gap-1 ${
-                              item.status === "SUCCESS" ? "text-emerald-500" : 
-                              item.status === "ERROR" ? "text-red-500" : "text-primary"
-                            }`}>
-                              {item.status === "SUCCESS" ? (
-                                <CheckCircle2 className="w-2.5 h-2.5" />
-                              ) : item.status === "ERROR" ? (
-                                <AlertCircle className="w-2.5 h-2.5" />
-                              ) : (
-                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                              )}
-                              <span>{item.status}</span>
-                            </div>
-                          )}
-                          {item.executionTime > 0 && (
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <Timer className="w-2.5 h-2.5" />
-                              <span>{item.executionTime}ms</span>
-                            </div>
-                          )}
-                        </div>
-                      </button>
+                      </div>
                     ))
                     : (
                       <div className="flex flex-col items-center justify-center flex-1 py-8 gap-2 text-center px-3">
@@ -599,8 +668,9 @@ export default function Playground() {
                   }`}>
                     {msg.content}
                     {msg.detectedLanguage && msg.detectedLanguage !== "en" && (
-                      <div className="mt-1.5">
-                        <span className="text-[10px] bg-primary/15 text-primary border border-primary/25 rounded-full px-2 py-0.5 font-medium uppercase tracking-wide">
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="text-[10px] bg-primary/15 text-primary border border-primary/25 rounded-full px-2 py-0.5 font-medium uppercase tracking-wide flex items-center gap-1">
+                          <MessageSquare className="w-2 h-2" />
                           {LANG_NAMES[msg.detectedLanguage] ?? msg.detectedLanguage} detected
                         </span>
                       </div>
