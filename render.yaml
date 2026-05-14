@@ -1,0 +1,22 @@
+services:
+  # Backend Spring Boot Service
+  - type: web
+    name: polylang-backend
+    runtime: java
+    plan: free
+    buildCommand: cd backend && ./mvnw clean package -DskipTests
+    startCommand: cd backend && java -Dserver.port=$PORT -jar target/polylang-1.0.0.jar
+    envVars:
+      - key: JAVA_VERSION
+        value: 21
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_USERNAME
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: DB_POOL_SIZE
+        value: 5
+    healthCheckPath: /api/health

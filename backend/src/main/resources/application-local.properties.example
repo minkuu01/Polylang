@@ -1,0 +1,17 @@
+# ========================
+# Local Development Secrets - EXAMPLE
+# ========================
+# Copy this file to application-local.properties and update with your credentials
+# application-local.properties is gitignored and will not be committed
+
+# Local PostgreSQL Database
+DATABASE_URL=jdbc:postgresql://localhost:5432/polylang
+DATABASE_USERNAME=postgres
+DATABASE_PASSWORD=your_password_here
+
+# Groq API Key (get yours at https://console.groq.com)
+GROQ_API_KEY=your_groq_api_key_here
+
+# Optional: Override any other settings for local development
+# spring.jpa.show-sql=true
+# logging.level.com.polylang=DEBUG

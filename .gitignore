@@ -1,0 +1,60 @@
+# ========================
+# SECRETS & ENVIRONMENT VARIABLES
+# ========================
+# Never commit real credentials - use *.example files as templates
+
+# Generic env files
+.env
+.env.local
+.env.production
+.env.development
+.env.staging
+.env.test
+.env.*.local
+
+# Spring Boot local secrets (contains real DB passwords, API keys)
+backend/src/main/resources/application-local.properties
+
+# Any properties file with "secret" or "credentials" in the name
+*secret*.properties
+*credentials*.properties
+*secrets*.yml
+*credentials*.yml
+
+# ========================
+# BACKEND (Java / Maven)
+# ========================
+backend/target/
+backend/.mvn/
+backend/logs/
+*.log
+*.log.*
+
+# Maven wrapper cache
+backend/.m2/wrapper/dists/
+
+# ========================
+# FRONTEND (Next.js)
+# ========================
+frontend/polylang-app/.next/
+frontend/polylang-app/node_modules/
+frontend/polylang-app/out/
+frontend/polylang-app/.env.local
+frontend/polylang-app/.env.production
+frontend/polylang-app/.env.development
+
+# ========================
+# IDE & EDITOR
+# ========================
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+
+# ========================
+# OS FILES
+# ========================
+.DS_Store
+Thumbs.db
+desktop.ini
