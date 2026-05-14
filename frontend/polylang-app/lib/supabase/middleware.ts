@@ -54,7 +54,16 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user && request.nextUrl.pathname.startsWith('/playground')) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/login'
+    redirectUrl.searchParams.set('next', request.nextUrl.pathname)
+    return NextResponse.redirect(redirectUrl)
+  }
 
   return response
 }

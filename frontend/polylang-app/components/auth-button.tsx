@@ -10,10 +10,12 @@ export function GoogleAuthButton() {
   const handleLogin = async () => {
     setIsLoading(true);
     try {
+      const next = new URLSearchParams(window.location.search).get("next");
+      const redirectPath = next?.startsWith("/") && !next.startsWith("//") ? next : "/playground";
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/playground`,
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectPath)}`,
         },
       });
       if (error) throw error;

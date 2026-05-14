@@ -15,6 +15,11 @@ export function AuthForm() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
+  const getRedirectPath = () => {
+    const next = new URLSearchParams(window.location.search).get("next");
+    return next?.startsWith("/") && !next.startsWith("//") ? next : "/playground";
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -28,13 +33,14 @@ export function AuthForm() {
           password,
         });
         if (error) throw error;
-        window.location.href = "/playground";
+        window.location.href = getRedirectPath();
       } else {
+        const redirectPath = getRedirectPath();
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback?next=/playground`,
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectPath)}`,
           },
         });
         if (error) throw error;
