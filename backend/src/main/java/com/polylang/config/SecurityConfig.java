@@ -23,10 +23,10 @@ public class SecurityConfig {
 
     @Bean
     public WebSecurityCustomizer webSecurityCustomizer() {
-        // Completely bypass security for these paths
         return (web) -> web.ignoring()
             .requestMatchers("/api/health")
-            .requestMatchers("/api/share/**");
+            .requestMatchers("/api/share/**")
+            .requestMatchers("/api/public/**"); // Just in case
     }
 
     @Bean
@@ -49,18 +49,21 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(true);
         
-        String allowedOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
-        if (allowedOrigins != null && !allowedOrigins.isEmpty()) {
-            for (String origin : allowedOrigins.split(",")) {
-                config.addAllowedOrigin(origin.trim());
+        // Add all likely origins
+        config.addAllowedOrigin("http://localhost:3000");
+        config.addAllowedOrigin("https://polylang-code.vercel.app");
+        
+        String envOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
+        if (envOrigins != null && !envOrigins.isEmpty()) {
+            for (String o : envOrigins.split(",")) {
+                config.addAllowedOrigin(o.trim());
             }
-        } else {
-            config.addAllowedOrigin("http://localhost:3000");
-            config.addAllowedOrigin("https://polylang-code.vercel.app");
         }
         
+        // Whitelist ALL headers and methods to prevent CORS blocks
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
+        config.setMaxAge(3600L); // Cache preflight for 1 hour
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
