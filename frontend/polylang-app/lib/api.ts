@@ -28,6 +28,9 @@ export interface ExecutionHistory {
   translatedText: string;
   targetLanguage: string;
   generatedCode: string;
+  output: string;
+  error: string;
+  executionTime: number;
   status: string;
 }
 

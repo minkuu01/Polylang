@@ -6,7 +6,7 @@ import {
   ArrowLeft, Play, TerminalSquare, MessageSquare, Code2, Loader2,
   Save, Files, Search, Settings, FileCode2, User, X,
   PanelRightClose, PanelLeftClose, FolderOpen, Download, CheckCircle2,
-  Clock, ChevronRight
+  Clock, ChevronRight, Timer, AlertCircle
 } from "lucide-react";
 import Editor, { loader } from "@monaco-editor/react";
 import { Button } from "@/components/ui/button";
@@ -230,8 +230,8 @@ export default function Playground() {
       clearTimeout(slowTimer);
       const ms = Date.now() - start;
       const footer = res.exitCode === 0
-        ? `\n\n● Exited with code 0  ·  ${ms}ms`
-        : `\n\n● Exited with code ${res.exitCode}  ·  ${ms}ms`;
+        ? `\n\n[Exited with code 0]  —  ${ms}ms`
+        : `\n\n[Exited with code ${res.exitCode}]  —  ${ms}ms`;
       setTerminalOutput((res.output || res.error || "(no output)") + footer);
     } catch (e) {
       clearTimeout(slowTimer);
@@ -425,12 +425,47 @@ export default function Playground() {
                           setEditorValue(item.generatedCode);
                           setSelectedLanguage(item.targetLanguage);
                           setHasCode(true);
+                          // Restore terminal output if it exists
+                          if (item.output || item.error) {
+                            const footer = item.status === "SUCCESS"
+                              ? `\n\n[Restored from history]  —  ${item.executionTime}ms`
+                              : `\n\n[Restored (Failed run)]  —  ${item.executionTime}ms`;
+                            setTerminalOutput((item.output || item.error || "(no output)") + footer);
+                          } else {
+                            setTerminalOutput("$ Restored from history");
+                          }
                           addMessage("ai", `Restored: "${item.inputText.slice(0, 40)}${item.inputText.length > 40 ? "…" : ""}"`);
                         }}
-                        className="flex items-start gap-2 px-2 py-1.5 text-left text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground rounded transition-colors w-full group"
+                        className="flex flex-col gap-1 px-2 py-2 text-left text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground rounded transition-colors w-full group border border-transparent hover:border-border"
                       >
-                        <Clock className="w-3 h-3 shrink-0 mt-0.5 text-muted-foreground/50 group-hover:text-primary transition-colors" />
-                        <span className="truncate leading-relaxed">{item.inputText}</span>
+                        <div className="flex items-start gap-2">
+                          <Clock className="w-3 h-3 shrink-0 mt-0.5 text-muted-foreground/50 group-hover:text-primary transition-colors" />
+                          <span className="truncate leading-relaxed font-medium">{item.inputText}</span>
+                        </div>
+                        <div className="flex items-center gap-2 pl-5 text-[10px] opacity-70">
+                          <span className="uppercase">{item.targetLanguage}</span>
+                          {item.status && (
+                            <div className={`flex items-center gap-1 ${
+                              item.status === "SUCCESS" ? "text-emerald-500" : 
+                              item.status === "ERROR" ? "text-red-500" : "text-primary"
+                            }`}>
+                              {item.status === "SUCCESS" ? (
+                                <CheckCircle2 className="w-2.5 h-2.5" />
+                              ) : item.status === "ERROR" ? (
+                                <AlertCircle className="w-2.5 h-2.5" />
+                              ) : (
+                                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                              )}
+                              <span>{item.status}</span>
+                            </div>
+                          )}
+                          {item.executionTime > 0 && (
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <Timer className="w-2.5 h-2.5" />
+                              <span>{item.executionTime}ms</span>
+                            </div>
+                          )}
+                        </div>
                       </button>
                     ))
                     : (
