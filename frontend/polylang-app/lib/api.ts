@@ -46,25 +46,33 @@ export class ApiError extends Error {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
+interface FetchWithTimeoutOptions extends RequestInit {
+  timeout?: number;
+}
+
 /**
  * Helper to get authentication headers
  */
-async function getAuthHeaders() {
+async function getAuthHeaders(): Promise<HeadersInit> {
   const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new ApiError('Authentication required. Please sign in.', 401);
+  }
+
   return {
     'Content-Type': 'application/json',
-    'Authorization': session ? `Bearer ${session.access_token}` : '',
+    'Authorization': `Bearer ${session.access_token}`,
   };
 }
 
-async function fetchWithTimeout(url: string, options: RequestInit = {}) {
-  const { timeout = 70000 } = options as any;
+async function fetchWithTimeout(url: string, options: FetchWithTimeoutOptions = {}) {
+  const { timeout = 70000, ...fetchOptions } = options;
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
 
   try {
     const response = await fetch(url, {
-      ...options,
+      ...fetchOptions,
       signal: controller.signal,
     });
     clearTimeout(id);
@@ -79,14 +87,14 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}) {
       if (response.status >= 500) {
         throw new ApiError('Server error. Check backend logs.', response.status);
       }
-      const errorData = await response.json().catch(() => ({}));
+      const errorData = await response.json().catch(() => ({})) as { message?: string };
       throw new ApiError(errorData.message || 'An unexpected error occurred.', response.status);
     }
 
     return response;
-  } catch (error: any) {
+  } catch (error: unknown) {
     clearTimeout(id);
-    if (error.name === 'AbortError') {
+    if (error instanceof DOMException && error.name === 'AbortError') {
       throw new ApiError('Backend is offline. Make sure Spring Boot is running.', 503);
     }
     throw error;
