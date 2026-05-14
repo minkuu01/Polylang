@@ -16,6 +16,7 @@ import org.springframework.http.HttpMethod;
 
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.beans.factory.annotation.Value;
 
 @Configuration
@@ -49,10 +50,11 @@ public class SecurityConfig {
 
     @Bean
     public JwtDecoder jwtDecoder() {
-        NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        // Explicitly allow ES256 which Supabase uses for some projects
+        NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri)
+                .jwsAlgorithm(SignatureAlgorithm.ES256)
+                .build();
         
-        // Use a validator that ONLY checks the signature and timestamp
-        // (Ignoring 'aud' and 'iss' strict matching which often causes 401s with Supabase)
         OAuth2TokenValidator<Jwt> withTimestamp = new JwtTimestampValidator();
         jwtDecoder.setJwtValidator(withTimestamp);
         
