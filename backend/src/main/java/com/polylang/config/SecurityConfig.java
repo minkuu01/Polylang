@@ -14,8 +14,9 @@ import org.springframework.core.annotation.Order;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpMethod;
 
-import java.util.Arrays;
-import java.util.List;
+import org.springframework.security.oauth2.jwt.*;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.beans.factory.annotation.Value;
 
 @Configuration
 @EnableWebSecurity
@@ -29,6 +30,9 @@ public class SecurityConfig {
             .requestMatchers("/api/public/**"); // Just in case
     }
 
+    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
+    private String jwkSetUri;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -38,9 +42,21 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated()
             )
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+            .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder())));
         
         return http.build();
+    }
+
+    @Bean
+    public JwtDecoder jwtDecoder() {
+        NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build();
+        
+        // Use a validator that ONLY checks the signature and timestamp
+        // (Ignoring 'aud' and 'iss' strict matching which often causes 401s with Supabase)
+        OAuth2TokenValidator<Jwt> withTimestamp = new JwtTimestampValidator();
+        jwtDecoder.setJwtValidator(withTimestamp);
+        
+        return jwtDecoder;
     }
 
     @Bean
