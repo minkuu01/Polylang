@@ -27,7 +27,12 @@ public class ExecutionHistory {
     @Column(columnDefinition = "TEXT")
     private String output;
 
-    private String status; // SUCCESS, ERROR, PENDING
+    @Column(columnDefinition = "TEXT")
+    private String error;
+
+    private Long executionTime;
+
+    private String status; // SUCCESS, ERROR, GENERATED
 
     private LocalDateTime createdAt;
 
@@ -60,6 +65,12 @@ public class ExecutionHistory {
 
     public String getOutput() { return output; }
     public void setOutput(String output) { this.output = output; }
+
+    public String getError() { return error; }
+    public void setError(String error) { this.error = error; }
+
+    public Long getExecutionTime() { return executionTime; }
+    public void setExecutionTime(Long executionTime) { this.executionTime = executionTime; }
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }

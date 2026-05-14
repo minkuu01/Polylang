@@ -88,9 +88,24 @@ public class CodeController {
     public ResponseEntity<ExecutionResponse> executeCode(@RequestBody ExecutionRequest request) {
         log.info("Execute request: lang={}", request.getLanguage());
 
+        long startTime = System.currentTimeMillis();
+        
         // Execute the code
         CodeExecutionService.ExecutionResult result =
                 codeExecutionService.execute(request.getCode(), request.getLanguage());
+
+        long duration = System.currentTimeMillis() - startTime;
+
+        // Save execution to history
+        ExecutionHistory history = new ExecutionHistory();
+        history.setInputText("Manual Execution");
+        history.setTargetLanguage(request.getLanguage());
+        history.setGeneratedCode(request.getCode()); // Save the actual code run
+        history.setOutput(result.getOutput());
+        history.setError(result.getError());
+        history.setExecutionTime(duration);
+        history.setStatus(result.getExitCode() == 0 ? "SUCCESS" : "ERROR");
+        historyService.save(history);
 
         ExecutionResponse response = new ExecutionResponse(
                 result.getOutput(),
