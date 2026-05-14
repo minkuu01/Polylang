@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "motion/react";
 import { LogOut, User, Settings } from "lucide-react";
 
@@ -22,7 +21,7 @@ export function UserNav({ user, align = "right" }: UserNavProps) {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
-    window.location.reload();
+    window.location.href = "/";
   };
 
   const avatarUrl = user.user_metadata?.avatar_url;

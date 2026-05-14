@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Download } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useState, Suspense, lazy, useEffect } from "react";
 import Link from "next/link";
 
@@ -83,7 +83,7 @@ export function HeroSection() {
               </Link>
               
               <Link
-                href="#docs"
+                href="/docs"
                 className="inline-flex h-14 items-center justify-center rounded border border-border bg-transparent px-8 text-sm font-semibold text-foreground transition-colors hover:bg-accent hover:text-accent-foreground uppercase tracking-widest"
               >
                 Read Documentation

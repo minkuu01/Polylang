@@ -58,3 +58,6 @@ frontend/polylang-app/.env.development
 .DS_Store
 Thumbs.db
 desktop.ini
+
+
+.playwright-mcp/

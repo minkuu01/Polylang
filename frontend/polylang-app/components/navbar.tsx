@@ -33,7 +33,7 @@ export async function Navbar() {
               Demo
             </Link>
             <Link
-              href="#docs"
+              href="/docs"
               className="group flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               <BookOpen className="w-4 h-4" />

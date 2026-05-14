@@ -28,20 +28,20 @@ export function AuthForm() {
           password,
         });
         if (error) throw error;
-        window.location.href = "/";
+        window.location.href = "/playground";
       } else {
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback`,
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=/playground`,
           },
         });
         if (error) throw error;
         setMessage("Check your email for the confirmation link!");
       }
-    } catch (err: any) {
-      setError(err.message || "An error occurred");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setIsLoading(false);
     }
