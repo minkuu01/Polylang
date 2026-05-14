@@ -49,21 +49,25 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowCredentials(true);
         
-        // Add all likely origins
-        config.addAllowedOrigin("http://localhost:3000");
-        config.addAllowedOrigin("https://polylang-code.vercel.app");
+        // Default local and production origins
+        config.addAllowedOriginPattern("http://localhost:3000");
+        config.addAllowedOriginPattern("https://polylang-code.vercel.app");
         
         String envOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
         if (envOrigins != null && !envOrigins.isEmpty()) {
             for (String o : envOrigins.split(",")) {
-                config.addAllowedOrigin(o.trim());
+                String trimmed = o.trim();
+                if (trimmed.equals("*")) {
+                    config.addAllowedOriginPattern("*"); // Safe wildcard pattern
+                } else {
+                    config.addAllowedOrigin(trimmed);
+                }
             }
         }
         
-        // Whitelist ALL headers and methods to prevent CORS blocks
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
-        config.setMaxAge(3600L); // Cache preflight for 1 hour
+        config.setMaxAge(3600L);
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
