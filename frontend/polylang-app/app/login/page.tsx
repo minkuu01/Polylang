@@ -1,6 +1,7 @@
 "use client";
 
 import { GoogleAuthButton } from "@/components/auth-button";
+import { AuthForm } from "@/components/auth-form";
 import Link from "next/link";
 import { motion } from "motion/react";
 
@@ -36,6 +37,19 @@ export default function LoginPage() {
         <div className="bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] p-8 rounded-2xl shadow-2xl">
           <div className="space-y-6">
             <GoogleAuthButton />
+            
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-white/[0.08]" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-[#030303] px-2 text-muted-foreground">
+                  Or continue with email
+                </span>
+              </div>
+            </div>
+
+            <AuthForm />
             
             <div className="relative">
               <div className="absolute inset-0 flex items-center">

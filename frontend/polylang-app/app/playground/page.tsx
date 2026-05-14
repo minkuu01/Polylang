@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import Editor, { loader } from "@monaco-editor/react";
 import { Button } from "@/components/ui/button";
+import { UserNav } from "@/components/user-nav";
+import { supabase } from "@/lib/supabase";
 
 loader.config({ paths: { vs: "/monaco-editor/vs" } });
 
@@ -83,6 +85,7 @@ export default function Playground() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [showExplorer, setShowExplorer] = useState(true);
   const [showChat, setShowChat] = useState(true);
+  const [user, setUser] = useState<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -98,6 +101,13 @@ export default function Playground() {
   // Fetch history
   useEffect(() => {
     getHistory().then(setHistory).catch(() => {});
+  }, []);
+
+  // Fetch user session
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+    });
   }, []);
 
   // Session storage init (from homepage)
@@ -335,9 +345,11 @@ export default function Playground() {
             <button className="p-1.5 text-muted-foreground hover:text-foreground transition-colors rounded" title="Settings">
               <Settings className="w-4 h-4" />
             </button>
-            <button className="p-1.5 text-muted-foreground hover:text-foreground transition-colors rounded" title="Profile">
-              <User className="w-4 h-4" />
-            </button>
+            {user && (
+              <div className="pb-1 scale-[0.85]">
+                <UserNav user={user} align="left" />
+              </div>
+            )}
           </div>
         </div>
 
