@@ -22,15 +22,18 @@ public class CodeController {
     private final CodeGenerationService codeGenerationService;
     private final CodeExecutionService codeExecutionService;
     private final HistoryService historyService;
+    private final TranscriptionService transcriptionService;
 
     public CodeController(TranslationService translationService,
                           CodeGenerationService codeGenerationService,
                           CodeExecutionService codeExecutionService,
-                          HistoryService historyService) {
+                          HistoryService historyService,
+                          TranscriptionService transcriptionService) {
         this.translationService = translationService;
         this.codeGenerationService = codeGenerationService;
         this.codeExecutionService = codeExecutionService;
         this.historyService = historyService;
+        this.transcriptionService = transcriptionService;
     }
 
     @PostMapping("/generate")
@@ -105,6 +108,20 @@ public class CodeController {
     public ResponseEntity<Map<String, String>> clearHistory(JwtAuthenticationToken token) {
         historyService.clearHistory(token.getName());
         return ResponseEntity.ok(Map.of("message", "History cleared successfully"));
+    }
+
+    @PostMapping(value = "/transcribe", consumes = "multipart/form-data")
+    public ResponseEntity<?> transcribeAudio(@RequestParam("audio") org.springframework.web.multipart.MultipartFile audio,
+                                             JwtAuthenticationToken token) {
+        log.info("Transcription request from user {}: file={}, size={}",
+                token.getName(), audio.getOriginalFilename(), audio.getSize());
+
+        try {
+            return ResponseEntity.ok(transcriptionService.transcribe(audio));
+        } catch (Exception e) {
+            log.error("Audio transcription failed: {}", e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("message", e.getMessage()));
+        }
     }
 
     /**
