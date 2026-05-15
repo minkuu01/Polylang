@@ -37,6 +37,11 @@ export interface ExecutionHistory {
   status: string;
 }
 
+export interface TranscriptionResponse {
+  text: string;
+  language?: string;
+}
+
 export class ApiError extends Error {
   constructor(message: string, public statusCode: number) {
     super(message);
@@ -61,6 +66,17 @@ async function getAuthHeaders(): Promise<HeadersInit> {
 
   return {
     'Content-Type': 'application/json',
+    'Authorization': `Bearer ${session.access_token}`,
+  };
+}
+
+async function getBearerHeaders(): Promise<HeadersInit> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new ApiError('Authentication required. Please sign in.', 401);
+  }
+
+  return {
     'Authorization': `Bearer ${session.access_token}`,
   };
 }
@@ -151,6 +167,21 @@ export async function updateHistoryItem(id: number, data: { code?: string; statu
     method: 'PUT',
     headers,
     body: JSON.stringify(data),
+  });
+  return response.json();
+}
+
+export async function transcribeAudio(audio: Blob): Promise<TranscriptionResponse> {
+  const headers = await getBearerHeaders();
+  const formData = new FormData();
+  const extension = audio.type.includes('mp4') ? 'mp4' : 'webm';
+  formData.append('audio', audio, `prompt-audio.${extension}`);
+
+  const response = await fetchWithTimeout(`${API_URL}/api/transcribe`, {
+    method: 'POST',
+    headers,
+    body: formData,
+    timeout: 90000,
   });
   return response.json();
 }

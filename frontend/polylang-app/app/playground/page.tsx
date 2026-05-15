@@ -4,11 +4,12 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, Play, TerminalSquare, MessageSquare, Code2, Loader2,
-  Save, Files, Search, Settings, FileCode2, User, X,
-  PanelRightClose, PanelLeftClose, FolderOpen, Download, CheckCircle2,
-  Clock, ChevronRight, Timer, AlertCircle, Trash2, Share2
+  Save, Files, Search, Settings, FileCode2, X,
+  PanelRightClose, PanelLeftClose, FolderOpen, CheckCircle2,
+  Clock, ChevronRight, Timer, AlertCircle, Trash2, Share2, Mic, Square
 } from "lucide-react";
 import Editor, { loader } from "@monaco-editor/react";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { UserNav } from "@/components/user-nav";
 import { supabase } from "@/lib/supabase";
@@ -22,6 +23,7 @@ import {
   clearHistory,
   deleteHistoryItem,
   updateHistoryItem,
+  transcribeAudio,
   checkHealth,
   ApiError,
   CodeResponse,
@@ -88,10 +90,16 @@ export default function Playground() {
   const [currentHistoryId, setCurrentHistoryId] = useState<number | null>(null);
   const [showExplorer, setShowExplorer] = useState(true);
   const [showChat, setShowChat] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceLanguage, setVoiceLanguage] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioStreamRef = useRef<MediaStream | null>(null);
 
   // Health check
   useEffect(() => {
@@ -120,9 +128,11 @@ export default function Playground() {
       try {
         const data: CodeResponse = JSON.parse(saved);
         sessionStorage.removeItem("polylang_init");
-        setSelectedLanguage(data.targetLanguage || "python");
-        loadCode(data.generatedCode, undefined, () => {
-          addMessage("ai", "Generated from your homepage prompt.", data.detectedLanguage);
+        window.setTimeout(() => {
+          setSelectedLanguage(data.targetLanguage || "python");
+          loadCode(data.generatedCode, undefined, () => {
+            addMessage("ai", "Generated from your homepage prompt.", data.detectedLanguage);
+          });
         });
       } catch {}
     }
@@ -137,6 +147,12 @@ export default function Playground() {
   useEffect(() => {
     if (showSearch) searchInputRef.current?.focus();
   }, [showSearch]);
+
+  useEffect(() => {
+    return () => {
+      audioStreamRef.current?.getTracks().forEach(track => track.stop());
+    };
+  }, []);
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -159,6 +175,88 @@ export default function Playground() {
     }, 500);
   }
 
+  function formatLanguageName(language: string) {
+    const normalized = language.toLowerCase();
+    return LANG_NAMES[normalized] ?? normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  }
+
+  function getSupportedAudioMimeType() {
+    if (typeof MediaRecorder === "undefined") return "";
+    return [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+    ].find(type => MediaRecorder.isTypeSupported(type)) ?? "";
+  }
+
+  async function handleStartRecording() {
+    if (isRecording || isTranscribing) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      addMessage("ai", "Voice input is not supported in this browser.", undefined, true);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+      audioChunksRef.current = [];
+      setVoiceLanguage(null);
+
+      const mimeType = getSupportedAudioMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = event => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const recordedType = recorder.mimeType || "audio/webm";
+        const audioBlob = new Blob(audioChunksRef.current, { type: recordedType });
+        audioStreamRef.current?.getTracks().forEach(track => track.stop());
+        audioStreamRef.current = null;
+        mediaRecorderRef.current = null;
+        setIsRecording(false);
+
+        if (audioBlob.size === 0) {
+          addMessage("ai", "No audio was captured. Please try again.", undefined, true);
+          return;
+        }
+
+        setIsTranscribing(true);
+        try {
+          const result = await transcribeAudio(audioBlob);
+          setInputVal(result.text);
+          setVoiceLanguage(result.language || null);
+          textareaRef.current?.focus();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Could not transcribe the recording.";
+          addMessage("ai", "Voice transcription failed: " + message, undefined, true);
+        } finally {
+          setIsTranscribing(false);
+          audioChunksRef.current = [];
+        }
+      };
+
+      recorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Microphone permission was denied.";
+      addMessage("ai", "Could not start voice input: " + message, undefined, true);
+      audioStreamRef.current?.getTracks().forEach(track => track.stop());
+      audioStreamRef.current = null;
+      setIsRecording(false);
+    }
+  }
+
+  function handleStopRecording() {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  }
+
   // ── Save session as .txt file ─────────────────────────────────────────────
   const handleSave = useCallback(() => {
     if (!hasCode || !editorValue.trim()) return;
@@ -178,7 +276,7 @@ export default function Playground() {
   // ── Generate ──────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputVal.trim() || isGenerating) return;
+    if (!inputVal.trim() || isGenerating || isRecording || isTranscribing) return;
 
     const userMsg = inputVal.trim();
     addMessage("user", userMsg);
@@ -191,7 +289,6 @@ export default function Playground() {
     try {
       const response = await generateCode(userMsg, selectedLanguage);
 
-      const langName = LANG_NAMES[response.detectedLanguage] ?? response.detectedLanguage?.toUpperCase();
       const detectedLabel = response.detectedLanguage && response.detectedLanguage !== "en"
         ? response.detectedLanguage
         : undefined;
@@ -283,7 +380,7 @@ export default function Playground() {
   );
 
   const currentFilename = LANG_FILENAME[selectedLanguage] ?? "untitled";
-  const isWorking = isGenerating || isRunning;
+  const isWorking = isGenerating || isRunning || isTranscribing;
 
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground overflow-hidden">
@@ -703,21 +800,46 @@ export default function Playground() {
                   onChange={e => setInputVal(e.target.value)}
                   placeholder="Describe what to build… (any language)"
                   rows={3}
-                  className="w-full bg-muted/60 border border-border rounded-lg px-3 py-2.5 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none pr-10 leading-relaxed transition-colors"
+                  className="w-full bg-muted/60 border border-border rounded-lg px-3 py-2.5 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none pr-20 leading-relaxed transition-colors"
                   onKeyDown={e => {
                     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(e); }
                   }}
                 />
                 <button
+                  type="button"
+                  onClick={isRecording ? handleStopRecording : handleStartRecording}
+                  disabled={isGenerating || isTranscribing}
+                  title={isRecording ? "Stop voice input" : "Start voice input"}
+                  className={`absolute right-10 bottom-2 p-1.5 rounded-md transition-all active:scale-95 disabled:opacity-40 ${
+                    isRecording
+                      ? "bg-red-500/15 text-red-400 hover:bg-red-500/25"
+                      : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                >
+                  {isTranscribing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : isRecording ? (
+                    <Square className="w-4 h-4 fill-current" />
+                  ) : (
+                    <Mic className="w-4 h-4" />
+                  )}
+                </button>
+                <button
                   type="submit"
-                  disabled={!inputVal.trim() || isGenerating}
+                  disabled={!inputVal.trim() || isGenerating || isRecording || isTranscribing}
                   className="absolute right-2 bottom-2 p-1.5 bg-primary text-primary-foreground rounded-md disabled:opacity-40 hover:bg-primary/90 transition-all active:scale-95"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </form>
               <p className="text-[10px] text-muted-foreground/50 text-center mt-1.5">
-                Supports Hindi, Marathi, French, and more
+                {isRecording
+                  ? "Recording voice prompt. Click stop when done."
+                  : isTranscribing
+                  ? "Transcribing your voice prompt..."
+                  : voiceLanguage
+                  ? `Detected ${formatLanguageName(voiceLanguage)} voice prompt. Review or send.`
+                  : "Supports typed or spoken prompts in Hindi, Marathi, French, and more"}
               </p>
             </div>
           </div>
