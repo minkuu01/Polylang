@@ -74,6 +74,7 @@ export default function Playground() {
     { id: "1", role: "ai", content: "Welcome to PolyLang Playground. Describe what you want to build — in any language." }
   ]);
   const [inputVal, setInputVal] = useState("");
+  const [lastPrompt, setLastPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [editorValue, setEditorValue] = useState("");
@@ -257,6 +258,57 @@ export default function Playground() {
     }
   }
 
+  async function generateFromPrompt(userMsg: string, targetLanguage: string, mode: "fresh" | "regenerate") {
+    setIsGenerating(true);
+    setIsLoadingCode(true);
+    setHasCode(false);
+    setEditorValue("");
+    setCurrentHistoryId(null);
+
+    try {
+      const response = await generateCode(userMsg, targetLanguage);
+      const detectedLabel = response.detectedLanguage && response.detectedLanguage !== "en"
+        ? response.detectedLanguage
+        : undefined;
+
+      addMessage(
+        "ai",
+        `${mode === "regenerate" ? "Regenerating" : "Generating"} ${LANG_LABEL[response.targetLanguage] ?? response.targetLanguage} code...`,
+        detectedLabel
+      );
+
+      loadCode(response.generatedCode, undefined, () => {
+        setIsGenerating(false);
+        setLastPrompt(userMsg);
+        addMessage(
+          "ai",
+          mode === "regenerate"
+            ? `Regenerated in ${LANG_LABEL[response.targetLanguage] ?? response.targetLanguage}.`
+            : "Done. You can edit the code and click Run Code."
+        );
+        getHistory().then(setHistory).catch(() => {});
+      });
+    } catch (e) {
+      setIsLoadingCode(false);
+      setIsGenerating(false);
+      const err = e as ApiError;
+      let msg = err.message ?? "Unknown error";
+      if (err.statusCode === 429) msg = "Rate limit reached - wait a moment and try again.";
+      else if (msg.includes("offline")) msg = "Cannot reach backend. Make sure Spring Boot is running on port 8080.";
+      addMessage("ai", "Error: " + msg, undefined, true);
+    }
+  }
+
+  function handleLanguageChange(nextLanguage: string) {
+    if (nextLanguage === selectedLanguage || isWorking) return;
+    setSelectedLanguage(nextLanguage);
+    setTerminalOutput("$ ready");
+
+    if (lastPrompt.trim() && hasCode) {
+      generateFromPrompt(lastPrompt, nextLanguage, "regenerate");
+    }
+  }
+
   // ── Save session as .txt file ─────────────────────────────────────────────
   const handleSave = useCallback(() => {
     if (!hasCode || !editorValue.trim()) return;
@@ -281,38 +333,8 @@ export default function Playground() {
     const userMsg = inputVal.trim();
     addMessage("user", userMsg);
     setInputVal("");
-    setIsGenerating(true);
-    setIsLoadingCode(true);
-    setHasCode(false);
-    setEditorValue("");
-
-    try {
-      const response = await generateCode(userMsg, selectedLanguage);
-
-      const detectedLabel = response.detectedLanguage && response.detectedLanguage !== "en"
-        ? response.detectedLanguage
-        : undefined;
-
-      addMessage("ai",
-        `Generating ${LANG_LABEL[response.targetLanguage] ?? response.targetLanguage} code…`,
-        detectedLabel
-      );
-
-      loadCode(response.generatedCode, undefined, () => {
-        setIsGenerating(false);
-        addMessage("ai", "Done. You can edit the code and click Run Code.");
-        getHistory().then(setHistory).catch(() => {});
-      });
-
-    } catch (e) {
-      setIsLoadingCode(false);
-      setIsGenerating(false);
-      const err = e as ApiError;
-      let msg = err.message ?? "Unknown error";
-      if (err.statusCode === 429) msg = "Rate limit reached — wait a moment and try again.";
-      else if (msg.includes("offline")) msg = "Cannot reach backend. Make sure Spring Boot is running on port 8080.";
-      addMessage("ai", "⚠ " + msg, undefined, true);
-    }
+    setLastPrompt(userMsg);
+    generateFromPrompt(userMsg, selectedLanguage, "fresh");
   };
 
   // ── Run ───────────────────────────────────────────────────────────────────
@@ -417,7 +439,8 @@ export default function Playground() {
           {/* Language selector */}
           <select
             value={selectedLanguage}
-            onChange={e => setSelectedLanguage(e.target.value)}
+            onChange={e => handleLanguageChange(e.target.value)}
+            disabled={isWorking}
             className="bg-muted border border-border rounded px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary h-8 hidden sm:block"
           >
             <option value="python">Python</option>
@@ -570,6 +593,7 @@ export default function Playground() {
                           onClick={() => {
                             loadCode(item.generatedCode, item.id);
                             setSelectedLanguage(item.targetLanguage);
+                            setLastPrompt(item.inputText || "");
                             // Restore terminal output if it exists
                             if (item.output || item.error) {
                               const footer = item.status === "SUCCESS"
